@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="da">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rutebygger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* Layout: square map on the left, instrument panel (stats, length chart, controls) on the right; stacks on phones. */
+  :root {
+    --bg: #e8ecf0;
+    --panel: #f7f9fa;
+    --ink: #16202a;
+    --muted: #56636f;
+    --line: #cdd6de;
+    --tour: #2b4f78;
+    --cut: #cc3d29;
+    --add: #17855a;
+    --btn: #16202a;
+    --btn-fg: #f7f9fa;
+    --font-head: 'IBM Plex Sans Condensed', 'Arial Narrow', system-ui, sans-serif;
+    --font-body: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #11171d;
+      --panel: #1a232c;
+      --ink: #e4eaf0;
+      --muted: #93a1ae;
+      --line: #2e3b47;
+      --tour: #7eaad8;
+      --cut: #ff7b64;
+      --add: #4fd096;
+      --btn: #e4eaf0;
+      --btn-fg: #11171d;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #11171d;
+    --panel: #1a232c;
+    --ink: #e4eaf0;
+    --muted: #93a1ae;
+    --line: #2e3b47;
+    --tour: #7eaad8;
+    --cut: #ff7b64;
+    --add: #4fd096;
+    --btn: #e4eaf0;
+    --btn-fg: #11171d;
+    color-scheme: dark;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 14px;
+    line-height: 1.45;
+    padding-block: 20px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+  h1 {
+    font-family: var(--font-head);
+    font-weight: 600;
+    font-size: 28px;
+    line-height: 1.1;
+    letter-spacing: 0.01em;
+    margin: 0 0 4px;
+    text-wrap: balance;
+  }
+  .sub { margin: 0; color: var(--muted); max-width: 62ch; }
+
+  .grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
+  @media (max-width: 780px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+
+  .stage { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  canvas#map {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--panel);
+  }
+  .status {
+    margin: 0;
+    min-height: 2.9em;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--ink);
+  }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; color: var(--muted); font-size: 12px; margin: 0; padding: 0; list-style: none; }
+  .legend li { display: flex; align-items: center; gap: 7px; }
+  .sw { display: inline-block; width: 22px; height: 0; border-top: 3px solid var(--tour); }
+  .sw.cut { border-top: 3px dashed var(--cut); }
+  .sw.add { border-top-color: var(--add); }
+
+  .panel { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+  .block { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 14px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0; }
+
+  .len { display: flex; align-items: baseline; gap: 8px; }
+  .len b { font-family: var(--font-mono); font-weight: 500; font-size: 38px; line-height: 1; font-variant-numeric: tabular-nums; }
+  .len span { color: var(--muted); font-size: 12px; }
+  .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
+  .stats div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .stats dt { font-size: 11px; color: var(--muted); }
+  .stats dd { margin: 0; font-family: var(--font-mono); font-size: 15px; font-variant-numeric: tabular-nums; }
+  #pct { color: var(--add); }
+
+  canvas#chart { display: block; width: 100%; height: 136px; }
+
+  .btns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  button {
+    font: inherit;
+    font-weight: 500;
+    padding: 9px 12px;
+    border-radius: 5px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--ink); }
+  button.primary { background: var(--btn); color: var(--btn-fg); border-color: var(--btn); }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--tour); outline-offset: 2px; }
+
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field .row { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; }
+  .field output { font-family: var(--font-mono); color: var(--muted); font-size: 12px; }
+  input[type=range] { width: 100%; accent-color: var(--tour); margin: 0; }
+  .check { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 2px 8px; align-items: start; }
+  .check input { margin: 3px 0 0; accent-color: var(--tour); }
+  .check small { grid-column: 2; color: var(--muted); font-size: 12px; line-height: 1.4; }
+</style>
+
+<style>
+  :root { color-scheme: light; }
+  body { margin: 0; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header>
+    <h1>Rutebygger</h1>
+    <p class="sub">En sælger skal besøge hver by én gang og vende hjem igen. Start med en tilfældig rute, og lad så lokal søgning forkorte den ét træk ad gangen.</p>
+  </header>
+
+  <div class="grid">
+    <section class="stage" aria-label="Kort over byer og den nuværende rute">
+      <canvas id="map" role="img" aria-label="Byer forbundet af den nuværende rute"></canvas>
+      <p id="status" class="status" aria-live="polite"></p>
+      <ul class="legend">
+        <li><span class="sw"></span>nuværende rute</li>
+        <li><span class="sw cut"></span>kant der snart fjernes</li>
+        <li><span class="sw add"></span>kant der tilføjes</li>
+      </ul>
+    </section>
+
+    <aside class="panel">
+      <div class="block">
+        <p class="label">Rutelængde</p>
+        <div class="len"><b id="len">0</b><span>enheder</span></div>
+        <dl class="stats">
+          <div><dt>Kortere med</dt><dd id="pct">0%</dd></div>
+          <div><dt>Træk</dt><dd id="moves">0</dd></div>
+          <div><dt>Byer</dt><dd id="ncity">0</dd></div>
+        </dl>
+        <canvas id="chart" aria-label="Rutelængde efter hvert træk"></canvas>
+      </div>
+
+      <div class="block">
+        <div class="btns">
+          <button id="play" class="primary" type="button">Pause</button>
+          <button id="step" type="button">Ét trin</button>
+          <button id="skip" type="button">Kør til ende</button>
+          <button id="restart" type="button">Ny tilfældig rute</button>
+          <button id="fresh" type="button" style="grid-column: 1 / -1">Nye byer</button>
+        </div>
+
+        <div class="field">
+          <div class="row"><label for="speed">Hastighed</label><output id="speedOut">8</output></div>
+          <input id="speed" type="range" min="1" max="13" value="8">
+        </div>
+        <div class="field">
+          <div class="row"><label for="count">Byer</label><output id="countOut">36</output></div>
+          <input id="count" type="range" min="12" max="80" value="36">
+        </div>
+
+        <label class="check"><input id="o2" type="checkbox" checked><span>2-opt</span><small>Fjern to kanter og vend stykket imellem dem om, så krydsninger i ruten forsvinder.</small></label>
+        <label class="check"><input id="oo" type="checkbox" checked><span>Or-opt</span><small>Løft 1 til 3 byer ud, og sæt dem ind i et billigere hul.</small></label>
+        <label class="check"><input id="pv" type="checkbox"><span>Vis træk, før det udføres</span><small>Hvert træk vises i rødt og grønt og venter, til du trykker Udfør træk.</small></label>
+      </div>
+    </aside>
+  </div>
+</main>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var cv = $('map'), ctx = cv.getContext('2d');
+  var chv = $('chart'), cctx = chv.getContext('2d');
+  var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // seeded random so a layout is reproducible within a session
+  function rng(seed) {
+    return function () {
+      seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+      var t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  var cities = [], D = [], tour = [], hist = [], moves = 0, startLen = 0;
+  var anim = null, running = !reduced, done = false, stepReq = false, statusText = '';
+  var DUR = [4000, 2600, 1800, 1100, 760, 520, 360, 240, 160, 100, 60, 30, 10];
+  var APPLY_AT = 0.55;
+
+  function fmt(v) { return v.toLocaleString('da-DK', { minimumFractionDigits: 1, maximumFractionDigits: 1 }); }
+
+  function dur() { return reduced ? 120 : DUR[+$('speed').value - 1]; }
+
+  function makeCities(n, seed) {
+    var r = rng(seed), out = [], tries = 0;
+    while (out.length < n) {
+      var p = { x: 3 + r() * 94, y: 3 + r() * 94 }, ok = true;
+      if (tries < 4000) {
+        for (var i = 0; i < out.length; i++) {
+          var dx = out[i].x - p.x, dy = out[i].y - p.y;
+          if (dx * dx + dy * dy < 49) { ok = false; break; }
+        }
+      }
+      tries++;
+      if (ok) out.push(p);
+    }
+    cities = out;
+    D = cities.map(function (a) {
+      return cities.map(function (b) { return Math.hypot(a.x - b.x, a.y - b.y); });
+    });
+  }
+
+  function tourLen(t) {
+    var s = 0;
+    for (var i = 0; i < t.length; i++) s += D[t[i]][t[(i + 1) % t.length]];
+    return s;
+  }
+
+  function shuffledTour() {
+    var t = cities.map(function (_, i) { return i; });
+    for (var i = t.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var x = t[i]; t[i] = t[j]; t[j] = x;
+    }
+    return t;
+  }
+
+  function reset() {
+    tour = shuffledTour();
+    startLen = tourLen(tour);
+    hist = [startLen];
+    moves = 0; anim = null; done = false; stepReq = false;
+    statusText = 'Tilfældig startrute. Hver kant strækker sig langt hen over kortet.';
+    updateStats(); updateButtons(); resizeAll();
+  }
+
+  function newInstance() {
+    var n = +$('count').value;
+    makeCities(n, Math.floor(Math.random() * 1e9));
+    $('ncity').textContent = n;
+    reset();
+    running = !reduced;
+    updateButtons();
+  }
+
+  // ---- moves ----
+  function try2opt(off) {
+    var n = tour.length;
+    for (var k = 0; k < n; k++) {
+      var i = (off + k) % n;
+      for (var j = i + 2; j < n; j++) {
+        if (i === 0 && j === n - 1) continue;
+        var a = tour[i], b = tour[i + 1], c = tour[j], d = tour[(j + 1) % n];
+        var delta = D[a][c] + D[b][d] - D[a][b] - D[c][d];
+        if (delta < -1e-9) {
+          var nt = tour.slice();
+          for (var p = i + 1, q = j; p < q; p++, q--) { var t = nt[p]; nt[p] = nt[q]; nt[q] = t; }
+          return { kind: '2opt', delta: delta, removed: [[a, b], [c, d]], added: [[a, c], [b, d]], tour: nt, cities: [a, b, c, d] };
+        }
+      }
+    }
+    return null;
+  }
+
+  function tryOr(off) {
+    var n = tour.length;
+    for (var k = 0; k < n; k++) {
+      var s = (off + k) % n;
+      for (var L = 1; L <= 3; L++) {
+        if (n < L + 4) continue;
+        var rot = [];
+        for (var p = 0; p < n; p++) rot.push(tour[(s + p) % n]);
+        var seg = rot.slice(0, L), rest = rot.slice(L), m = rest.length;
+        var prev = rest[m - 1], next = rest[0], s0 = seg[0], s1 = seg[L - 1];
+        var gain = D[prev][s0] + D[s1][next] - D[prev][next];
+        for (var q = 0; q < m - 1; q++) {
+          var u = rest[q], v = rest[q + 1];
+          for (var r = 0; r < 2; r++) {
+            if (L === 1 && r === 1) continue;
+            var rev = r === 1, x = rev ? s1 : s0, y = rev ? s0 : s1;
+            var delta = D[u][x] + D[y][v] - D[u][v] - gain;
+            if (delta < -1e-9) {
+              var sg = rev ? seg.slice().reverse() : seg;
+              var nt = rest.slice(0, q + 1).concat(sg, rest.slice(q + 1));
+              return { kind: 'or', len: L, delta: delta, removed: [[prev, s0], [s1, next], [u, v]], added: [[prev, next], [u, x], [y, v]], tour: nt, cities: seg.concat([u, v]) };
+            }
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  function findMove() {
+    var use2 = $('o2').checked, useOr = $('oo').checked;
+    var off = Math.floor(Math.random() * tour.length);
+    var order = [];
+    if (use2) order.push(try2opt);
+    if (useOr) order.push(tryOr);
+    if (order.length === 2 && Math.random() < 0.5) order.reverse();
+    for (var i = 0; i < order.length; i++) {
+      var mv = order[i](off);
+      if (mv) return mv;
+    }
+    return null;
+  }
+
+  function describe(mv) {
+    var save = fmt(-mv.delta);
+    if (mv.kind === '2opt') return '2-opt: to kanter fjernes, og stykket imellem dem vendes om. Sparer ' + save + ' enheder.';
+    return 'Or-opt: flyt ' + mv.len + (mv.len === 1 ? ' by' : ' byer') + ' til et billigere hul. Sparer ' + save + ' enheder.';
+  }
+
+  function applyMove() {
+    tour = anim.mv.tour;
+    moves++;
+    hist.push(tourLen(tour));
+    anim.applied = true;
+    updateStats();
+  }
+
+  function confirmMove() {
+    if (!anim || !anim.waiting) return;
+    anim.waiting = false; anim.confirmed = true;
+    anim.t0 = performance.now() - APPLY_AT * anim.dur;
+    statusText = describe(anim.mv);
+    updateButtons();
+  }
+
+  function finish() {
+    done = true; running = false; anim = null;
+    statusText = 'Lokalt optimum efter ' + moves + ' træk. Ingen ombytning eller flytning kan forkorte ruten, men en bedre rute kan stadig findes.';
+    updateButtons();
+  }
+
+  function runToEnd() {
+    anim = null; stepReq = false;
+    var mv, guard = 0;
+    while (guard++ < 5000 && (mv = findMove())) {
+      tour = mv.tour; moves++; hist.push(tourLen(tour));
+    }
+    updateStats(); finish();
+  }
+
+  // ---- drawing ----
+  function colors() {
+    var s = getComputedStyle(document.documentElement);
+    var g = function (n) { return s.getPropertyValue(n).trim(); };
+    return { panel: g('--panel'), ink: g('--ink'), muted: g('--muted'), line: g('--line'), tour: g('--tour'), cut: g('--cut'), add: g('--add') };
+  }
+
+  var mapSize = 0, pad = 22;
+  function px(c) { return pad + cities[c].x / 100 * (mapSize - 2 * pad); }
+  function py(c) { return pad + cities[c].y / 100 * (mapSize - 2 * pad); }
+  function key(a, b) { return a < b ? a + '-' + b : b + '-' + a; }
+  function seg(a, b) { ctx.beginPath(); ctx.moveTo(px(a), py(a)); ctx.lineTo(px(b), py(b)); ctx.stroke(); }
+
+  function drawMap() {
+    var c = colors(), n = tour.length;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    var dpr = cv.width / mapSize;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = c.panel; ctx.fillRect(0, 0, mapSize, mapSize);
+
+    // faint 10-unit grid
+    ctx.strokeStyle = c.line; ctx.lineWidth = 1; ctx.globalAlpha = 0.45;
+    for (var g = 0; g <= 100; g += 10) {
+      var gx = pad + g / 100 * (mapSize - 2 * pad);
+      ctx.beginPath(); ctx.moveTo(gx, pad); ctx.lineTo(gx, mapSize - pad); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(pad, gx); ctx.lineTo(mapSize - pad, gx); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    var proposing = anim && !anim.applied;
+    var cutKeys = {};
+    if (proposing) anim.mv.removed.forEach(function (e) { cutKeys[key(e[0], e[1])] = 1; });
+
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.strokeStyle = c.tour; ctx.lineWidth = 2;
+    for (var i = 0; i < n; i++) {
+      var a = tour[i], b = tour[(i + 1) % n];
+      if (cutKeys[key(a, b)]) continue;
+      seg(a, b);
+    }
+
+    var hot = {};
+    if (anim) {
+      anim.mv.cities.forEach(function (id) { hot[id] = 1; });
+      if (proposing) {
+        ctx.strokeStyle = c.cut; ctx.lineWidth = 3; ctx.setLineDash([7, 5]);
+        anim.mv.removed.forEach(function (e) { seg(e[0], e[1]); });
+        ctx.setLineDash([]);
+        ctx.strokeStyle = c.add; ctx.lineWidth = 3; ctx.globalAlpha = 0.9;
+        anim.mv.added.forEach(function (e) { seg(e[0], e[1]); });
+        ctx.globalAlpha = 1;
+      } else {
+        var f = Math.max(0, 1 - (anim.p - APPLY_AT) / (1 - APPLY_AT));
+        ctx.strokeStyle = c.add; ctx.lineWidth = 3; ctx.globalAlpha = f;
+        anim.mv.added.forEach(function (e) { seg(e[0], e[1]); });
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    for (var k = 0; k < cities.length; k++) {
+      var isHot = !!hot[k];
+      ctx.beginPath();
+      ctx.arc(px(k), py(k), isHot ? 6 : 4.5, 0, Math.PI * 2);
+      ctx.fillStyle = isHot ? c.ink : c.panel;
+      ctx.fill();
+      ctx.strokeStyle = c.ink; ctx.lineWidth = 1.5; ctx.stroke();
+    }
+  }
+
+  function drawChart() {
+    var c = colors(), w = chv.clientWidth, h = chv.clientHeight;
+    var dpr = chv.width / w;
+    cctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    cctx.clearRect(0, 0, w, h);
+    var L = 44, R = 10, T = 8, B = 20, pw = w - L - R, ph = h - T - B;
+    var ymax = hist[0], ymin = hist[hist.length - 1];
+    if (ymax - ymin < 1) ymin = ymax * 0.8;
+    var xmax = Math.max(hist.length - 1, 1);
+    var X = function (i) { return L + i / xmax * pw; };
+    var Y = function (v) { return T + (1 - (v - ymin) / (ymax - ymin)) * ph; };
+
+    cctx.font = '11px "IBM Plex Mono", ui-monospace, monospace';
+    cctx.textBaseline = 'middle'; cctx.textAlign = 'right';
+    [ymax, (ymax + ymin) / 2, ymin].forEach(function (v) {
+      var y = Y(v);
+      cctx.strokeStyle = c.line; cctx.lineWidth = 1;
+      cctx.beginPath(); cctx.moveTo(L, y); cctx.lineTo(w - R, y); cctx.stroke();
+      cctx.fillStyle = c.muted; cctx.fillText(String(Math.round(v)), L - 6, y);
+    });
+    cctx.textBaseline = 'alphabetic';
+    cctx.textAlign = 'left'; cctx.fillStyle = c.muted; cctx.fillText('0', L, h - 5);
+    cctx.textAlign = 'right'; cctx.fillText(xmax + ' træk', w - R, h - 5);
+
+    cctx.beginPath();
+    hist.forEach(function (v, i) { if (i === 0) cctx.moveTo(X(i), Y(v)); else cctx.lineTo(X(i), Y(v)); });
+    cctx.strokeStyle = c.tour; cctx.lineWidth = 2; cctx.lineJoin = 'round'; cctx.stroke();
+    cctx.lineTo(X(hist.length - 1), T + ph); cctx.lineTo(X(0), T + ph); cctx.closePath();
+    cctx.globalAlpha = 0.14; cctx.fillStyle = c.tour; cctx.fill(); cctx.globalAlpha = 1;
+
+    var ex = X(hist.length - 1), ey = Y(hist[hist.length - 1]);
+    cctx.beginPath(); cctx.arc(ex, ey, 4, 0, Math.PI * 2);
+    cctx.fillStyle = c.add; cctx.fill();
+  }
+
+  function updateStats() {
+    var len = tourLen(tour);
+    $('len').textContent = fmt(len);
+    $('pct').textContent = fmt(startLen > 0 ? (1 - len / startLen) * 100 : 0) + ' %';
+    $('moves').textContent = moves;
+  }
+
+  function updateButtons() {
+    $('play').textContent = running ? 'Pause' : 'Afspil';
+    $('play').disabled = done;
+    var waiting = !!(anim && anim.waiting);
+    $('step').textContent = waiting ? 'Udfør træk' : 'Ét trin';
+    $('step').disabled = done || (running && !waiting);
+    $('skip').disabled = done;
+  }
+
+  function sizeCanvas(canvas, w, h) {
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.max(1, Math.round(w * dpr));
+    canvas.height = Math.max(1, Math.round(h * dpr));
+  }
+
+  function resizeAll() {
+    mapSize = cv.clientWidth || 400;
+    sizeCanvas(cv, mapSize, mapSize);
+    sizeCanvas(chv, chv.clientWidth || 280, chv.clientHeight || 136);
+    render();
+  }
+
+  function render() {
+    drawMap(); drawChart();
+    $('status').textContent = statusText;
+  }
+
+  // ---- loop ----
+  function frame(now) {
+    if (!anim && !done && (running || stepReq)) {
+      stepReq = false;
+      var mv = findMove();
+      if (!mv) finish();
+      else {
+        anim = { mv: mv, t0: now, dur: dur(), applied: false, p: 0, waiting: false, confirmed: false };
+        statusText = describe(mv);
+        if ($('pv').checked) { anim.waiting = true; statusText += ' Tryk på Udfør træk for at gennemføre det.'; updateButtons(); }
+      }
+    }
+    if (anim && !anim.waiting) {
+      anim.p = (now - anim.t0) / anim.dur;
+      if (anim.p >= APPLY_AT && !anim.applied) applyMove();
+      if (anim.p >= 1) { anim = null; updateButtons(); }
+    }
+    render();
+    requestAnimationFrame(frame);
+  }
+
+  // ---- controls ----
+  $('play').addEventListener('click', function () { if (done) return; running = !running; updateButtons(); });
+  $('step').addEventListener('click', function () {
+    if (done) return;
+    if (anim && anim.waiting) { confirmMove(); return; }
+    if (anim) return;
+    running = false; stepReq = true; updateButtons();
+  });
+  $('pv').addEventListener('change', function () {
+    if ($('pv').checked) running = false; else confirmMove();
+    updateButtons();
+  });
+  $('skip').addEventListener('click', runToEnd);
+  $('restart').addEventListener('click', function () { reset(); running = !reduced; updateButtons(); });
+  $('fresh').addEventListener('click', newInstance);
+  $('speed').addEventListener('input', function () { $('speedOut').textContent = $('speed').value; });
+  $('count').addEventListener('input', function () { $('countOut').textContent = $('count').value; });
+  $('count').addEventListener('change', newInstance);
+  ['o2', 'oo'].forEach(function (id) {
+    $(id).addEventListener('change', function () {
+      if (!$('o2').checked && !$('oo').checked) { $(id).checked = true; return; }
+      if (done) { done = false; statusText = 'Valgte træktyper er ændret. Søger videre.'; updateButtons(); }
+    });
+  });
+
+  if (window.ResizeObserver) {
+    new ResizeObserver(function () { resizeAll(); }).observe(cv);
+    new ResizeObserver(function () { resizeAll(); }).observe(chv);
+  } else {
+    window.addEventListener('resize', resizeAll);
+  }
+
+  newInstance();
+  if (running) {
+    // let the opening random tour sit on screen for a moment before the first move
+    running = false; updateButtons();
+    setTimeout(function () { if (!done && !anim) { running = true; updateButtons(); } }, 900);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
